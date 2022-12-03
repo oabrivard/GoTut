@@ -1,0 +1,273 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"runtime/pprof"
+	"time"
+
+	"golang.org/x/exp/slices"
+)
+
+// Create alias to long function names
+var pl = fmt.Println
+
+type slot byte
+
+const (
+	Empty slot = iota
+	HasToken
+	Unused
+)
+
+type state [][]slot
+
+const BOARD_SIZE = 7
+
+type direction byte
+
+const (
+	Down direction = iota
+	Left
+	Up
+	Right
+	Invalid
+)
+
+func (d direction) isValid() bool {
+	return d < Invalid
+}
+
+func (d direction) next() direction {
+	return (d + 1) % 5
+}
+
+type move struct {
+	row_start  int
+	col_start  int
+	row_jumped int
+	col_jumped int
+	row_end    int
+	col_end    int
+}
+
+type stack struct {
+	data  []move
+	index int
+}
+
+func (s *stack) PushBack(m move) {
+	s.data[s.index] = m
+	s.index++
+}
+
+func (s *stack) Remove(i int) {
+	s.index--
+}
+
+func (s *stack) Back() int {
+	return 0
+}
+
+// isEndState verify if the game state s is the final goal state.
+// It returns true if the state is the goal state, false otherwise.
+func isGoalState(s state) bool {
+	goal := state{
+		{Unused, Unused, Empty, Empty, Empty, Unused, Unused},
+		{Unused, Unused, Empty, Empty, Empty, Unused, Unused},
+		{Empty, Empty, Empty, Empty, Empty, Empty, Empty},
+		{Empty, Empty, Empty, HasToken, Empty, Empty, Empty},
+		{Empty, Empty, Empty, Empty, Empty, Empty, Empty},
+		{Unused, Unused, Empty, Empty, Empty, Unused, Unused},
+		{Unused, Unused, Empty, Empty, Empty, Unused, Unused},
+	}
+
+	return slices.EqualFunc(s, goal, func(row1, row2 []slot) bool { return slices.Equal(row1, row2) })
+}
+
+func createMove(row int, col int, d direction) move {
+	switch d {
+	case Up:
+		return move{row, col, row - 1, col, row - 2, col}
+	case Right:
+		return move{row, col, row, col + 1, row, col + 2}
+	case Down:
+		return move{row, col, row + 1, col, row + 2, col}
+	case Left:
+		return move{row, col, row, col - 1, row, col - 2}
+	}
+
+	panic("Invalid direction")
+}
+
+// moveToken changes the state s of the board by making the move m.
+// The token at position (m.tokenPos.row, m.tokenPos.column) will be removed.
+// The adjacent token will also be removed.
+// The next adjacent slot will be filled by a token.
+func moveToken(s state, m *move) {
+	s[m.row_start][m.col_start] = Empty
+	s[m.row_jumped][m.col_jumped] = Empty
+	s[m.row_end][m.col_end] = HasToken
+}
+
+// undoMove changes the state s of the board by undoing the move m.
+// The slot at position (move.tokenPos.row, move.tokenPos.column) will be filled by a token.
+// The adjacent slot will also be filled.
+// The next adjacent slot will has its token removed.
+func undoMove(s state, m *move) {
+	s[m.row_start][m.col_start] = HasToken
+	s[m.row_jumped][m.col_jumped] = HasToken
+	s[m.row_end][m.col_end] = Empty
+}
+
+// isMoveAllowed checks if a move is a valid move.
+// A move is valid if there exists a token at the location (tokenPos.row, move.tokenPos.column)
+// and a token exists at the adjacent slot in the given direction and the is an empty slot just after.
+// It returns true if the move is allowed, false otherwise.
+func isMoveAllowed(s state, m *move) bool {
+	return m.col_end >= 0 && m.col_end < BOARD_SIZE &&
+		m.row_end >= 0 && m.row_end < BOARD_SIZE &&
+		s[m.row_start][m.col_start] == HasToken &&
+		s[m.row_jumped][m.col_jumped] == HasToken &&
+		s[m.row_end][m.col_end] == Empty
+}
+
+// depthFirstSearch tries to find a solution to the game using a depth first search approach.
+// Current state and already made moves are given as input.
+// It returns a slice of valid moves if a solution is found, an empty slice otherwise.
+// func depthFirstSearch(state state, moves *list.List) bool {
+func depthFirstSearch(state state, moves *stack) bool {
+	if isGoalState(state) {
+		return true
+	}
+
+	for r := range state {
+		for c := range state[r] {
+			for d := Down; d.isValid(); d = d.next() {
+				var m move
+				switch d {
+				case Up:
+					m = move{r, c, r - 1, c, r - 2, c}
+				case Right:
+					m = move{r, c, r, c + 1, r, c + 2}
+				case Down:
+					m = move{r, c, r + 1, c, r + 2, c}
+				case Left:
+					m = move{r, c, r, c - 1, r, c - 2}
+				}
+
+				//				m := createMove(r, c, d)
+
+				//	if isMoveAllowed(state, &m) {
+				if m.col_end >= 0 && m.col_end < BOARD_SIZE &&
+					m.row_end >= 0 && m.row_end < BOARD_SIZE &&
+					state[m.row_start][m.col_start] == HasToken &&
+					state[m.row_jumped][m.col_jumped] == HasToken &&
+					state[m.row_end][m.col_end] == Empty {
+					moveToken(state, &m)
+					moves.PushBack(m)
+
+					if depthFirstSearch(state, moves) {
+						return true
+					} else {
+						moves.Remove(moves.Back())
+						undoMove(state, &m)
+					}
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+/*
+func dfs_iterative(state state, moves *list.List) bool {
+DFS-iterative (G, s):                                   //Where G is graph and s is source vertex
+	let S be stack
+	S.push( s )            //Inserting s in stack
+	mark s as visited.
+	while ( S is not empty):
+			//Pop a vertex from stack to visit next
+			v  =  S.top( )
+		 S.pop( )
+		 //Push all the neighbours of v in stack that are not visited
+		for all neighbours w of v in Graph G:
+				if w is not visited :
+								 S.push( w )
+								mark w as visited
+
+
+
+}
+*/
+
+/*
+func depthFirstSearch(state state, moves []move) []move {
+	if isGoalState(state) {
+		return moves
+	}
+
+	for r := range state {
+		for c := range state[r] {
+			for d := Up; d.isValid(); d = d.next() {
+				m := move{
+					tokenPos{r, c},
+					d,
+				}
+
+				if isMoveAllowed(state, m) {
+					moveToken(state, m)
+					moves = append(moves, m)
+					result := depthFirstSearch(state, moves)
+
+					if len(result) > 0 {
+						return result
+					} else {
+						moves = moves[:len(moves)-1]
+						undoMove(state, m)
+					}
+				}
+			}
+		}
+	}
+
+	return make([]move, 0)
+}
+*/
+
+// main is the program entry point
+func main() {
+	start := time.Now()
+
+	f, err := os.Create("profile_solitaire.pb.gz")
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = pprof.StartCPUProfile(f)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer pprof.StopCPUProfile()
+
+	s := state{
+		{Unused, Unused, HasToken, HasToken, HasToken, Unused, Unused},
+		{Unused, Unused, HasToken, HasToken, HasToken, Unused, Unused},
+		{HasToken, HasToken, HasToken, HasToken, HasToken, HasToken, HasToken},
+		{HasToken, HasToken, HasToken, Empty, HasToken, HasToken, HasToken},
+		{HasToken, HasToken, HasToken, HasToken, HasToken, HasToken, HasToken},
+		{Unused, Unused, HasToken, HasToken, HasToken, Unused, Unused},
+		{Unused, Unused, HasToken, HasToken, HasToken, Unused, Unused},
+	}
+
+	//var moves []move
+	//depthFirstSearch(s, moves)
+
+	//var moves = list.New()
+	var moves = &stack{make([]move, 100), 0}
+	depthFirstSearch(s, moves)
+
+	elapsed := time.Since(start)
+	pl("It took : ", elapsed)
+}

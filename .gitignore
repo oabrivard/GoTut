@@ -1,6 +1,7 @@
 # dev tools
 .vscode/
 *.code-workspace
+.idea/
 
 # Binaries for programs and plugins
 *.exe
@@ -14,6 +15,9 @@
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
+
+# Profiler output
+*.pb.gz
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
