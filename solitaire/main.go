@@ -163,12 +163,16 @@ func isMoveAllowed(s state, m move) bool {
 
 // depthFirstSearch tries to find a solution to the game using a depth first search approach.
 // Current state and already made moves are given as input.
+// state will be updated by each move and will be in the "goal state" if we find a solution.
 // It returns a slice of valid moves if a solution is found, an empty slice otherwise.
 func depthFirstSearch(state state, moves []move) []move {
+
+	// The first way to end the recursive call of this function is if we have found the solution.
 	if isGoalState(state) {
 		return moves
 	}
 
+	// Explore all possible moves, starting by the top left slot.
 	for r := range state {
 		for c := range state[r] {
 			for d := Down; d.isValid(); d = d.next() {
@@ -177,16 +181,21 @@ func depthFirstSearch(state state, moves []move) []move {
 					d,
 				}
 
+				// since it is a brute force algorithm, we must discard invalid moves
 				if isMoveAllowed(state, m) {
-					moveToken(state, m)
+					moveToken(state, m) // updates the state to reflect the move
 					moves = append(moves, m)
+
+					// recursive call to find the next move that should lead to the solution
 					result := depthFirstSearch(state, moves)
 
 					if len(result) > 0 {
+						// we just pop out of the recursive call, returning the solution
 						return result
 					} else {
+						// the move we tried led to a dead end. We must undo it
 						moves = moves[:len(moves)-1]
-						undoMove(state, m)
+						undoMove(state, m) // updates the state to cancel the move
 					}
 				}
 			}
