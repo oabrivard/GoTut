@@ -27,6 +27,8 @@ import (
 	"os"
 	"time"
 
+	"solitaire/stack"
+
 	"golang.org/x/exp/slices"
 )
 
@@ -44,6 +46,7 @@ const (
 type state [][]slot
 
 const BOARD_SIZE = 7
+const MAX_MOVES = BOARD_SIZE * BOARD_SIZE
 
 type direction byte
 
@@ -165,7 +168,7 @@ func isMoveAllowed(s state, m move) bool {
 // Current state and already made moves are given as input.
 // state will be updated by each move and will be in the "goal state" if we find a solution.
 // It returns a slice of valid moves if a solution is found, an empty slice otherwise.
-func depthFirstSearch(state state, moves []move) []move {
+func depthFirstSearch(state state, moves stack.Stack[move]) stack.Stack[move] {
 
 	// The first way to end the recursive call of this function is if we have found the solution.
 	if isGoalState(state) {
@@ -184,17 +187,17 @@ func depthFirstSearch(state state, moves []move) []move {
 				// since it is a brute force algorithm, we must discard invalid moves
 				if isMoveAllowed(state, m) {
 					moveToken(state, m) // updates the state to reflect the move
-					moves = append(moves, m)
+					moves.Push(m)
 
 					// recursive call to find the next move that should lead to the solution
 					result := depthFirstSearch(state, moves)
 
-					if len(result) > 0 {
+					if result.HasElement() {
 						// we just pop out of the recursive call, returning the solution
 						return result
 					} else {
 						// the move we tried led to a dead end. We must undo it
-						moves = moves[:len(moves)-1]
+						moves.Pop()
 						undoMove(state, m) // updates the state to cancel the move
 					}
 				}
@@ -202,13 +205,14 @@ func depthFirstSearch(state state, moves []move) []move {
 		}
 	}
 
-	return make([]move, 0)
+	return stack.New[move](0)
 }
 
 // printSolution prints each move from moves that leads to the Solitaire solution
-func printSolution(moves []move) {
-	if len(moves) > 0 {
-		for _, m := range moves {
+func printSolution(moves stack.Stack[move]) {
+	if moves.HasElement() {
+		for moves.HasElement() {
+			m := moves.Pop()
 			_, nextToAdjacent := getAdjacentTokenPos(m.tokenPos, m.direction)
 
 			fmt.Printf("Move %s from (%d,%d) to (%d,%d)\n",
@@ -249,14 +253,14 @@ func main() {
 		{Unused, Unused, HasToken, HasToken, HasToken, Unused, Unused},
 	}
 
-	var moves []move
+	var moves = stack.New[move](MAX_MOVES) //[]move
 	moves = depthFirstSearch(startState, moves)
 
 	args := os.Args
 	if len(args) == 2 && args[1] == "print" {
-		printSolution(moves)
+		printSolution(moves.Reversed())
 	} else {
-		pl("Finished with ", len(moves), " moves.")
+		pl("Finished with ", moves.Count(), " moves.")
 	}
 
 	elapsed := time.Since(start)
